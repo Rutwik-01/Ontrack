@@ -4,6 +4,7 @@ name: OnTrack Companion
   schedule:
     # Runs every 30 minutes. GitHub's scheduler is best-effort and can lag
     # a few minutes under load - that's fine for this use case.
+    # nudge 
     - cron: '*/30 * * * *'
   workflow_dispatch: {}   # lets you trigger it manually from the Actions tab
 
