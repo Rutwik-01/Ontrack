@@ -262,11 +262,18 @@ class GitHubAPI:
         self._request(url, method="PUT", body=body)
 
     def get_gist_token(self):
-        """Read whatever token the bookmarklet last pushed, or None."""
+        """Read whatever token the bookmarklet last pushed, or None.
+
+        Deliberately unauthenticated: reading a gist (public or secret)
+        needs no token at all. In GitHub Actions, self.token is the
+        repo-scoped GITHUB_TOKEN, which has zero permission over Gists -
+        sending it here causes GitHub to reject the request with 403,
+        rather than just ignoring it. Always read anonymously instead.
+        """
         if not self.gist_id:
             return None
         url = "https://api.github.com/gists/%s" % self.gist_id
-        data = self._request(url, use_auth=bool(self.token))
+        data = self._request(url, use_auth=False)
         f = (data.get("files") or {}).get(self.gist_filename)
         if not f:
             return None
