@@ -820,6 +820,14 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OnTrack \u2014 my tasks</title>
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%20%22My%20OnTrack%22%2C%20%22short_name%22%3A%20%22OnTrack%22%2C%20%22start_url%22%3A%20%22.%22%2C%20%22display%22%3A%20%22standalone%22%2C%20%22background_color%22%3A%20%22%23f6f7f9%22%2C%20%22theme_color%22%3A%20%22%232f6df6%22%2C%20%22icons%22%3A%20%5B%7B%22src%22%3A%20%22data%3Aimage/svg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0MCIgZmlsbD0iIzJmNmRmNiIvPgo8cGF0aCBkPSJNNTIgMTAwbDI4IDI4IDYwLTYwIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMTYiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8%2BCjwvc3ZnPg%3D%3D%22%2C%20%22sizes%22%3A%20%22192x192%22%2C%20%22type%22%3A%20%22image/svg%2Bxml%22%7D%2C%20%7B%22src%22%3A%20%22data%3Aimage/svg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0MCIgZmlsbD0iIzJmNmRmNiIvPgo8cGF0aCBkPSJNNTIgMTAwbDI4IDI4IDYwLTYwIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMTYiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8%2BCjwvc3ZnPg%3D%3D%22%2C%20%22sizes%22%3A%20%22512x512%22%2C%20%22type%22%3A%20%22image/svg%2Bxml%22%7D%5D%7D">
+<link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0MCIgZmlsbD0iIzJmNmRmNiIvPgo8cGF0aCBkPSJNNTIgMTAwbDI4IDI4IDYwLTYwIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMTYiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+Cjwvc3ZnPg==">
+<link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxOTIgMTkyIj4KPHJlY3Qgd2lkdGg9IjE5MiIgaGVpZ2h0PSIxOTIiIHJ4PSI0MCIgZmlsbD0iIzJmNmRmNiIvPgo8cGF0aCBkPSJNNTIgMTAwbDI4IDI4IDYwLTYwIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMTYiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBmaWxsPSJub25lIi8+Cjwvc3ZnPg==">
+<meta name="theme-color" content="#2f6df6">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="OnTrack">
 <style>
   :root {{
     --ink:#14181d; --sub:#6b7280; --line:#e6e8eb; --bg:#f6f7f9; --card:#ffffff;
@@ -945,12 +953,12 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 </div>
 <script>
   // Staleness guard: with 30-min scheduled runs (plus GitHub's occasional
-  // delay), anything past ~2 hours means something's actually broken -
-  // most likely the OnTrack token expired and needs a fresh bookmarklet click.
+  // delay), anything past ~1 hour means something's actually worth checking -
+  // could be an expired token, or the scheduled trigger not firing yet.
   (function(){{
     var built = {updated_epoch} * 1000;
     var ageH = (Date.now() - built) / 3600000;
-    if (ageH > 2) {{
+    if (ageH > 1) {{
       var el = document.getElementById('stale');
       el.className = 'stale show';
       el.innerHTML = '\u26a0\ufe0f This dashboard is ' + Math.round(ageH * 10) / 10 +
