@@ -261,6 +261,22 @@ class GitHubAPI:
             body["sha"] = sha
         self._request(url, method="PUT", body=body)
 
+    def get_file(self, path):
+        """Read a file's raw bytes from the repo, or None if it doesn't exist.
+
+        Actions runners are thrown away after every run, so anything that
+        needs to persist across runs (like "have we already emailed about
+        this comment") has to live here in the repo instead of on local disk.
+        """
+        url = "https://api.github.com/repos/%s/%s/contents/%s" % (self.owner, self.repo, path)
+        try:
+            existing = self._request(url + "?ref=" + self.branch)
+            return base64.b64decode(existing.get("content", ""))
+        except HTTPError as e:
+            if e.code == 404:
+                return None
+            raise
+
     def get_gist_token(self):
         """Read whatever token the bookmarklet last pushed, or None.
 
@@ -400,6 +416,7 @@ def normalize_comments(raw):
         ctype = c.get("type") or "text"
         dt = parse_datetime(c.get("created_at"))
         out.append({
+            "id": c.get("id"),
             "author": name,
             "type": ctype,
             "text": c.get("comment") or "",
@@ -911,9 +928,10 @@ DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   .empty {{ padding:40px; text-align:center; color:var(--sub); }}
   @media (max-width:640px) {{
     .stats {{ grid-template-columns:repeat(3,1fr); }}
-    .a,.sd {{ display:none; }} th.a-h,th.sd-h {{ display:none; }}
+    .a {{ display:none; }} th.a-h {{ display:none; }}
     .db,th.db-h {{ display:none; }}
     .n {{ min-width:130px; }}
+    .sd {{ min-width:80px; }} th.sd-h {{ min-width:80px; }}
     table {{ font-size:13px; }}
     .fbbtn {{ padding:3px 8px; font-size:11px; }}
     td,th {{ padding:10px 8px; }}
@@ -1210,52 +1228,157 @@ def cmd_dashboard(cfg, units=None, tasks=None):
                   "locally, so nothing is lost): %s" % e)
 
 
+def load_remote_state(cfg):
+    """Reminder dedup state lives in the repo itself (reminder_state.json),
+    since Actions runners are thrown away after every run - a local file
+    would never survive between runs. Fails open (empty state) if GitHub is
+    briefly unreachable, so a network hiccup can't block reminders forever."""
+    default = {"due_sent": {}, "feedback_sent": []}
+    if not cfg.has_section("github"):
+        return default
+    try:
+        gh = GitHubAPI(cfg)
+        raw = gh.get_file(cfg.get("reminders", "state_path", fallback="reminder_state.json"))
+        if not raw:
+            return default
+        data = json.loads(raw.decode("utf-8"))
+        data.setdefault("due_sent", {})
+        data.setdefault("feedback_sent", [])
+        return data
+    except Exception as e:
+        print("Could not load reminder state (starting fresh this run): %s" % e)
+        return default
+
+
+def save_remote_state(cfg, state):
+    try:
+        gh = GitHubAPI(cfg)
+        path = cfg.get("reminders", "state_path", fallback="reminder_state.json")
+        gh.put_file(path, json.dumps(state).encode("utf-8"), "Update reminder state")
+    except Exception as e:
+        print("Could not save reminder state (dedup may repeat next run): %s" % e)
+
+
+def render_precise_reminder_email(due_pings, feedback_pings):
+    """due_pings: list of (task, days_left). feedback_pings: list of (task, comment)."""
+
+    def excerpt(text, n=180):
+        text = " ".join((text or "").split())
+        return text if len(text) <= n else text[:n].rstrip() + "\u2026"
+
+    def esc(s):
+        return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    text = "OnTrack updates\n\n"
+    if due_pings:
+        text += "DUE SOON (not yet submitted):\n"
+        for t, days in due_pings:
+            when = t["due_date"].strftime("%a %d %b") if t["due_date"] else "?"
+            text += "  - [%s] %s %s - due %s (%d day%s away)\n" % (
+                t["unit_code"], t["abbr"], t["name"], when, days, "s" if days != 1 else "")
+        text += "\n"
+    if feedback_pings:
+        text += "NEW MARKER FEEDBACK:\n"
+        for t, c in feedback_pings:
+            text += "  - [%s] %s %s - %s: \"%s\"\n" % (
+                t["unit_code"], t["abbr"], t["name"], c["author"], excerpt(c["text"]))
+        text += "\n"
+
+    def due_rows_html():
+        if not due_pings:
+            return ""
+        rows = ""
+        for t, days in due_pings:
+            when = t["due_date"].strftime("%a %d %b") if t["due_date"] else "?"
+            rows += (
+                '<tr><td style="padding:8px 10px;border-left:3px solid #b45309;'
+                'font-family:monospace;font-weight:600;white-space:nowrap">%s</td>'
+                '<td style="padding:8px 10px">%s <span style="color:#6b7280">%s</span></td>'
+                '<td style="padding:8px 10px;color:#b45309;font-weight:600;white-space:nowrap">'
+                '%s (%d day%s)</td></tr>'
+                % (t["unit_code"], t["abbr"], esc(t["name"]), when, days, "s" if days != 1 else "")
+            )
+        return ('<h3 style="margin:20px 0 6px;font-size:14px;text-transform:uppercase;'
+                'color:#b45309">Due soon (not yet submitted)</h3>'
+                '<table style="width:100%%;border-collapse:collapse;font-size:14px">%s</table>' % rows)
+
+    def feedback_rows_html():
+        if not feedback_pings:
+            return ""
+        rows = ""
+        for t, c in feedback_pings:
+            rows += (
+                '<div style="border-left:3px solid #2f6df6;padding:6px 12px;margin:6px 0;'
+                'background:#f5f8ff">'
+                '<div style="font-size:13px"><b>%s</b> %s <span style="color:#6b7280">&middot; %s</span></div>'
+                '<div style="font-size:14px;color:#374151;margin-top:3px">&ldquo;%s&rdquo;</div></div>'
+                % (t["unit_code"], esc(t["name"]), esc(c["author"]), esc(excerpt(c["text"])))
+            )
+        return ('<h3 style="margin:20px 0 6px;font-size:14px;text-transform:uppercase;'
+                'color:#2f6df6">New marker feedback</h3>%s' % rows)
+
+    html = (
+        '<div style="max-width:600px;margin:0 auto;font-family:-apple-system,Segoe UI,'
+        'Roboto,Arial,sans-serif;color:#1b1f24">'
+        '<p style="font-size:13px;color:#6b7280;margin:0">OnTrack Companion</p>'
+        '<h2 style="margin:4px 0 0">Updates</h2>'
+        + due_rows_html() + feedback_rows_html() +
+        '</div>'
+    )
+    return text, html
+
+
 def cmd_remind(cfg, units=None, tasks=None):
     if units is None:
         units, tasks = gather(cfg)
-    start_lead = cfg.getint("reminders", "start_lead_days", fallback=0)
-    due_lead = cfg.getint("reminders", "due_lead_days", fallback=3)
-    digest = build_digest(tasks, start_lead, due_lead)
 
-    # Optional early warning if the token is a readable JWT nearing expiry.
-    warn_days = cfg.getint("reminders", "token_warn_days", fallback=3)
-    days_left = token_days_remaining(cfg.get("ontrack", "auth_token"))
-    notice = None
-    if days_left is not None and days_left <= warn_days:
-        notice = ("Heads-up: your OnTrack token expires in about %d day(s). "
-                  "Refresh it soon (settoken) so reminders keep working." % days_left)
+    offsets_raw = cfg.get("reminders", "due_reminder_offsets_days", fallback="2,1")
+    try:
+        offsets = {int(x.strip()) for x in offsets_raw.split(",") if x.strip()}
+    except ValueError:
+        offsets = {2, 1}
 
+    state = load_remote_state(cfg)
+    today = melbourne_today()
+    due_pings = []       # (task, days_left)
+    feedback_pings = []  # (task, comment)
+
+    for t in tasks:
+        settled = t["status"] in DONE_STATES or t["status"] in REVIEW_STATES
+        task_key = "%s:%s" % (t["unit_code"], t["abbr"])
+
+        # Due-soon ping: only for not-yet-submitted work, only exactly at the
+        # configured offsets, only once per task per offset - ever.
+        if not settled and t["due_date"]:
+            days_left = (t["due_date"] - today).days
+            if days_left in offsets:
+                already = state["due_sent"].setdefault(task_key, [])
+                if days_left not in already:
+                    due_pings.append((t, days_left))
+                    already.append(days_left)
+
+        # Feedback ping: OnTrack's own is_new flag tells us what's unread;
+        # we track comment IDs ourselves so the same comment doesn't get
+        # re-emailed every run until you happen to view it on OnTrack itself.
+        for c in t.get("comments", []):
+            cid = c.get("id")
+            if c.get("is_new") and cid is not None and cid not in state["feedback_sent"]:
+                feedback_pings.append((t, c))
+                state["feedback_sent"].append(cid)
+
+    if not due_pings and not feedback_pings:
+        print("Nothing to remind about this run.")
+        return
+
+    text, html = render_precise_reminder_email(due_pings, feedback_pings)
     prefix = cfg.get("email", "subject_prefix", fallback="OnTrack")
-    state = load_state()
-    today_iso = melbourne_today().isoformat()
-    force = cfg.getboolean("reminders", "force", fallback=False)
-
-    if not digest_has_content(digest):
-        # Nothing to do today, but still warn about an imminent token expiry.
-        if notice and state.get("last_expiry_warn") != today_iso:
-            send_email(cfg, prefix + " \u2014 token expiring soon",
-                       "<p style='font-family:sans-serif'>%s</p>" % notice, notice)
-            state["last_expiry_warn"] = today_iso
-            save_state(state)
-            print("Sent token-expiry heads-up.")
-        else:
-            print("Nothing actionable today. No email sent.")
-        return
-
-    # Send at most one digest per calendar day.
-    if state.get("last_digest_date") == today_iso and not force:
-        print("Digest already sent today. Skipping.")
-        return
-
-    text, html = render_digest_email(digest, notice=notice)
-    n = sum(len(x) for x in digest)
-    subject = prefix + " \u2014 %d item(s) need attention" % n
+    n = len(due_pings) + len(feedback_pings)
+    subject = prefix + " \u2014 %d update(s)" % n
     send_email(cfg, subject, html, text)
-    state["last_digest_date"] = today_iso
-    if notice:
-        state["last_expiry_warn"] = today_iso
-    save_state(state)
-    print("Digest emailed (%d items)." % n)
+    save_remote_state(cfg, state)
+    print("Reminder emailed: %d due-date ping(s), %d feedback ping(s)."
+          % (len(due_pings), len(feedback_pings)))
+
 
 
 def main():
@@ -1281,14 +1404,17 @@ def main():
                      "dashboard | remind | all" % cmd)
     except HTTPError as e:
         if e.code in (401, 403, 419):
-            # Don't silently die on a scheduled run: email an alert so you know
-            # to refresh the token. settoken handles its own errors above.
+            # Off by default: the dashboard's own stale-banner already tells
+            # you when the token's dead, so this email is opt-in to avoid
+            # duplicate noise. Set send_auth_alert_email = true to re-enable.
             alerted = False
-            if cmd in ("dashboard", "remind", "all", "test"):
+            alert_enabled = cfg.getboolean("reminders", "send_auth_alert_email", fallback=False)
+            if alert_enabled and cmd in ("dashboard", "remind", "all", "test"):
                 alerted = send_auth_alert(cfg, "Auth failed with HTTP %d." % e.code)
             msg = "\nAuth failed (%d) \u2014 your token has likely expired." % e.code
             msg += ("\nAn alert email was sent to you." if alerted else
-                    "\n(No alert email sent: already alerted today, or email not set up.)")
+                    "\n(No alert email sent - check the dashboard's stale banner instead, "
+                    "or set send_auth_alert_email=true in config.ini to re-enable this.)")
             msg += ('\nRefresh it:  python3 ontrack_companion.py settoken "<new token>"'
                     '   (see README).')
             sys.exit(msg)
