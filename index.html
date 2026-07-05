@@ -94,9 +94,10 @@
   .empty { padding:40px; text-align:center; color:var(--sub); }
   @media (max-width:640px) {
     .stats { grid-template-columns:repeat(3,1fr); }
-    .a,.sd { display:none; } th.a-h,th.sd-h { display:none; }
+    .a { display:none; } th.a-h { display:none; }
     .db,th.db-h { display:none; }
     .n { min-width:130px; }
+    .sd { min-width:80px; } th.sd-h { min-width:80px; }
     table { font-size:13px; }
     .fbbtn { padding:3px 8px; font-size:11px; }
     td,th { padding:10px 8px; }
@@ -105,7 +106,7 @@
 <body><div class="wrap">
   <header>
     <h1>My OnTrack <span>&middot; 6 units &middot; 115 tasks</span></h1>
-    <div class="updated">updated Sun 05 Jul 2026, 12:28 AM AEST/AEDT</div>
+    <div class="updated">updated Sun 05 Jul 2026, 10:07 AM AEST/AEDT</div>
   </header>
 
   <div class="stale" id="stale"></div>
@@ -139,7 +140,7 @@
   // delay), anything past ~1 hour means something's actually worth checking -
   // could be an expired token, or the scheduled trigger not firing yet.
   (function(){
-    var built = 1783175304 * 1000;
+    var built = 1783210034 * 1000;
     var ageH = (Date.now() - built) / 3600000;
     if (ageH > 1) {
       var el = document.getElementById('stale');
