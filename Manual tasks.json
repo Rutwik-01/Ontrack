@@ -1,0 +1,23 @@
+{
+  "_comment": "JSON has no comment syntax, so read this: this file is safe to edit directly in GitHub's web editor, same as config.ini. Delete the example below and add your own. Valid 'status' values: not_started, working_on_it, need_help, ready_for_feedback, fix_and_resubmit, redo, discuss, demonstrate, complete, fail, time_exceeded, do_not_resubmit, feedback_exceeded, assess_in_portfolio. Dates are YYYY-MM-DD. A typo here can never break your real OnTrack data - worst case, that one entry is skipped and a warning shows in the Actions log.",
+
+  "units": [
+    {
+      "code": "EXT101",
+      "name": "Example External Unit (delete me)",
+      "target_grade": 2
+    }
+  ],
+
+  "tasks": [
+    {
+      "unit_code": "EXT101",
+      "abbr": "1.1P",
+      "name": "Example manual task (delete me)",
+      "status": "not_started",
+      "start_date": "2026-07-10",
+      "due_date": "2026-07-20",
+      "weight": 2
+    }
+  ]
+}
