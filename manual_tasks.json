@@ -49,7 +49,7 @@
       "unit_code": "SIT735",
       "abbr": "Quiz-P",
       "name": "SIT735 Practice Online Quiz (ungraded practice)",
-      "status": "not_started",
+      "status": "complete",
       "start_date": "2026-07-06",
       "due_date": "2026-07-19"
     },
@@ -57,7 +57,7 @@
       "unit_code": "SIT735",
       "abbr": "Quiz-A1",
       "name": "SIT735 Online Quiz: Assessment 1",
-      "status": "not_started",
+      "status": "complete",
       "start_date": "2026-07-06",
       "due_date": "2026-07-19",
       "weight": 10
